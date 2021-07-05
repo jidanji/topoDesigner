@@ -1,0 +1,963 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>监控拓扑图</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script type="text/javascript" src="./gojs/go.js"></script>
+    <script src="./gojs/RealtimeDragSelectingTool.js"></script>
+    <script src="./gojs/GuidedDraggingTool.js"></script>
+    <script src="./gojs/DrawCommandHandler.js"></script>
+    <script src="./gojs/RotateMultipleTool.js"></script>
+
+    <link href="Content/bootstrap.min.css" rel="stylesheet" />
+    <script src="Scripts/jquery-1.9.1.min.js"></script>
+    <script src="Scripts/bootstrap.min.js"></script>
+
+    <!-- 引入样式 -->
+    <link rel="stylesheet" type="text/css" href="./Scripts/elementui/element-ui.css">
+    <!-- 先引入 Vue -->
+    <script type="text/javascript" src="./Scripts/vue.js"></script>
+    <!-- 引入组件库 -->
+    <script type="text/javascript" src="./Scripts/element-ui/index.js"></script>
+
+    <style type="text/css">
+        #myDiagramDiv {
+            background: #ffffff;
+            background-size: 8px 8px;
+            background-repeat: repeat;
+            font-family: 'Microsoft YaHei UI';
+            /*background-image: url('xxxxx/gezi.jpg');*/
+            background-repeat: repeat;
+        }
+        /* CSS for the traditional context menu */
+        #contextMenu {
+            z-index: 10002;
+            position: absolute;
+            left: 5px;
+            border: 1px solid #444;
+            background-color: #F5F5F5;
+            display: none;
+            box-shadow: 0 0 10px rgba( 0, 0, 0, .4 );
+            font-size: 12px;
+            font-family: sans-serif;
+            font-weight: bold;
+        }
+
+            #contextMenu ul {
+                list-style: none;
+                top: 0;
+                left: 0;
+                margin: 0;
+                padding: 0;
+            }
+
+            #contextMenu li a {
+                position: relative;
+                min-width: 60px;
+                color: #444;
+                display: inline-block;
+                padding: 6px;
+                text-decoration: none;
+                cursor: pointer;
+            }
+
+            #contextMenu li:hover {
+                background: #CEDFF2;
+                color: #EEE;
+            }
+
+            #contextMenu li ul li {
+                display: none;
+            }
+
+                #contextMenu li ul li a {
+                    position: relative;
+                    min-width: 60px;
+                    padding: 6px;
+                    text-decoration: none;
+                    cursor: pointer;
+                }
+
+            #contextMenu li:hover ul li {
+                display: block;
+                margin-left: 0px;
+                margin-top: 0px;
+            }
+
+        .el-switch {
+            height: 40px;
+            line-height: 40px;
+        }
+
+        .el-switch__label {
+            height: 14px !important;
+        }
+
+        .el-input__inner {
+            height: 32px;
+        }
+
+        #nodePro {
+            position: absolute;
+            right: 0;
+            top: 40px;
+            background: #f6f6f6;
+            z-index: 200;
+            padding: 20px;
+            padding-left: 0;
+        }
+
+        .el-form-item {
+            margin-bottom: 0;
+            width: 250px;
+        }
+
+        [v-cloak] {
+            display: none;
+        }
+
+        .dropdown-wrapper {
+            height: 40px;
+            line-height: 40px;
+            min-width: 75px;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        .el-dropdown-menu__item {
+            padding: 0 12px;
+        }
+
+        .el-dropdown-menu {
+            top: 35px !important;
+        }
+
+        .el-popper[x-placement^=bottom] {
+            margin-top: 0;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            border-radius: 10px;
+            background: #c7c6c6;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #eeeeee;
+        }
+    </style>
+
+
+    <script id="code">
+        //查询拓扑信息
+        //查询拓扑信息
+        function queryTopoMessage(topo_id) {
+            var params = {};
+            params.option = "queryTopoDetail";
+            params.topo_id = topo_id;
+            sendAjax(params, 'newTopoall', 'doTopoAllAction_new', function callBack(rs) {
+                var FLOW_STR = rs.topoMsg;
+                myDiagram.model = go.Model.fromJson(FLOW_STR);
+            });
+        }
+
+        function linkInfo(d) {  // Tooltip info for a link data object
+            return "Link:\nfrom " + d.from + " to " + d.to;
+        }
+        function cxcommand(event, val) {
+            if (val === undefined) val = event.currentTarget.id;
+            var diagram = myDiagram;
+            /*
+                  a)         查看配置详情
+                  b)         维护配置信息
+                  c)         查看关系拓扑
+                  d)         维护配置关系 */
+            switch (val) {
+                case "cm1": {
+                    // 查看配置详情
+                    console.log(currentData);
+                } break;
+            }
+            diagram.currentTool.stopTool();
+        }
+
+        // A custom command, for changing the color of the selected node(s).
+        function changeColor(diagram, color) {
+            // Always make changes in a transaction, except when initializing the diagram.
+            diagram.startTransaction("change color");
+            diagram.selection.each(function (node) {
+                if (node instanceof go.Node) {  // ignore any selected Links and simple Parts
+                    // Examine and modify the data, not the Node directly.
+                    var data = node.data;
+                    // Call setDataProperty to support undo/redo as well as
+                    // automatically evaluating any relevant bindings.
+                    diagram.model.setDataProperty(data, "color", color);
+                }
+            });
+            diagram.commitTransaction("change color");
+        }
+
+
+        window.jQuery = jQuery.noConflict();
+        //var $ = null;
+        function resize() {
+            jQuery('#myDiagramDiv,#leftbox').height(jQuery(window).height() - 60)
+        }
+        jQuery(document).ready(function () {
+            resize();
+            init();
+
+            /*   queryTopoMessage(1);
+              queryTopoAlarm(1);
+              queryLineStatus(1) */
+            // colors used, named for easier identification
+            var blue = "#0288D1";
+            var pink = "#B71C1C";
+            var pinkfill = "#F8BBD0";
+            var bluefill = "#B3E5FC";
+
+            var lightgrad = _(go.Brush, "Linear", { 1: "#E6E6FA", 0: "#FFFAF0" });
+
+            jQuery("#mmmmm").click(function () {
+                myDiagram.startTransaction("add employee");
+                var newemp = { key: 12, text: "d", length: 6.33, earlyStart: 12220, lateFinish: 132.01, critical: false, sysName: "不服就干" };
+
+                myDiagram.model.addNodeData(newemp);
+                myDiagram.commitTransaction("add employee");
+            });
+            /*   $("#saveTopoBtn").click(function(){
+                 var flowstr= myDiagram.model.toJSON();
+                 saveTopoInfos(flowstr);
+              }) */
+            //拓扑保存框取消按钮响应事件
+            jQuery("#cancleBtn").click(function () {
+                jQuery("#topo_modal").hide();
+            });
+            //工具栏保存按钮点击事件
+            jQuery('#saveTopoBtn').click(function () {
+                queryAlarmShow();
+                querySystem();
+                jQuery("#nopublish").prop("checked", "checked");
+                jQuery("#topo_status").val("1");
+                jQuery("#topo_modal").show();
+            });
+
+        })
+
+        function init() {
+            if (window.goSamples) goSamples();  // init for these samples -- you don't need to call this
+            _ = go.GraphObject.make;  // for more concise visual tree definitions
+
+            // colors used, named for easier identification
+            var blue = "#0288D1";
+            var pink = "#B71C1C";
+            var pinkfill = "#F8BBD0";
+            var bluefill = "#B3E5FC";
+
+            var lightgrad = _(go.Brush, "Linear", { 1: "#E6E6FA", 0: "#FFFAF0" });
+
+            myDiagram =
+                _(go.Diagram, "myDiagramDiv",
+                    {
+                        commandHandler: new DrawCommandHandler(),
+                        allowDelete: true,
+                        allowCopy: true,
+                        rotatingTool: new RotateMultipleTool(),  // defined in RotateMultipleTool.js
+                        draggingTool: new GuidedDraggingTool(),  // defined in GuidedDraggingTool.js
+                        //"commandHandler.arrowKeyBehavior": "move",
+                        "draggingTool.horizontalGuidelineColor": "blue",
+                        "draggingTool.verticalGuidelineColor": "blue",
+                        "draggingTool.centerGuidelineColor": "green",
+                        "draggingTool.guidelineWidth": 2,
+                        "toolManager.mouseWheelBehavior": go.ToolManager.WheelZoom,
+                        "undoManager.isEnabled": true,
+                        "commandHandler.archetypeGroupData": { text: "分组名称", isGroup: true, color: "blue" },
+                        dragSelectingTool: _(RealtimeDragSelectingTool,
+                            { isPartialInclusion: true, delay: 50 },
+                            {
+                                box: _(go.Part,  // replace the magenta box with a red one
+                                    { layerName: "Tool", selectable: false },
+                                    _(go.Shape,
+                                        {
+                                            name: "SHAPE", fill: "rgba(255,0,0,0.1)",
+                                            stroke: "red", strokeWidth: 2
+                                        }))
+                            }),
+                    });
+
+            // This is the actual HTML context menu:
+            var cxElement = document.getElementById("contextMenu");
+
+            // Since we have only one main element, we don't have to declare a hide method,
+            // we can set mainElement and GoJS will hide it automatically
+            var myContextMenu = _(go.HTMLInfo, {
+                show: showContextMenu,
+                mainElement: cxElement
+            });
+            function makeButton(text, action, visiblePredicate) {
+                return _("ContextMenuButton",
+                    _(go.TextBlock, text),
+                    { click: action },
+                    // don't bother with binding GraphObject.visible if there's no predicate
+                    visiblePredicate ? new go.Binding("visible", "", function (o, e) { return o.diagram ? visiblePredicate(o, e) : false; }).ofObject() : {});
+            }
+            var partContextMenu =
+                _("ContextMenu",
+                    makeButton("建立组",
+                        function (e, obj) { e.diagram.commandHandler.groupSelection(); },
+                        function (o) { return o.diagram.commandHandler.canGroupSelection(); }),
+                    makeButton("解除组",
+                        function (e, obj) { e.diagram.commandHandler.ungroupSelection(); },
+                        function (o) { return o.diagram.commandHandler.canUngroupSelection(); }),
+                );
+            
+            myDiagram.nodeTemplate =
+                _(go.Node, "Auto",
+                    { click: handleNodeclick },
+                    new go.Binding("location", "loc", go.Point.parse).makeTwoWay(go.Point.stringify),
+                    new go.Binding("angle").makeTwoWay(),
+                    // { contextMenu: myContextMenu},
+                    { contextMenu: partContextMenu },
+                    { rotatable: true, rotateObjectName: "SHAPE" },
+
+                    _(go.Panel, "Spot",  // the border
+                        {
+
+                        },
+                        new go.Binding("stroke", "isHighlighted", function (h) { return h ? "#e1f3fc" : "#f6f6f6"; }).ofObject(),
+                    ),
+
+                    _(go.Panel, "Table",
+                        { margin: 3, stretch: go.GraphObject.Fill, width: 85 },
+                        _(go.Picture, {
+                            row: 0, column: 0, alignment: go.Spot.Center,
+                            desiredSize: new go.Size(40, 40),
+                            margin: new go.Margin(0, 0, 0, 0),
+                            width: 40,
+                            portId: "",
+                            fromLinkable: true,
+                            /*  fromSpot: go.Spot.AllSides,  */
+                            toLinkable: true,
+                            /* toSpot: go.Spot.AllSides,  */
+                            cursor: "pointer"
+                        },
+                            new go.Binding("source", "imagesource")
+
+                        ),
+
+                        _(go.Picture, {
+                            row: 0, column: 0, alignment: go.Spot.Left,
+                            alignmentFocus: go.Spot.TopLeft,
+                            desiredSize: new go.Size(12, 12),
+                            margin: new go.Margin(-15, 0, 0, 58),
+                            width: 12
+                        },
+                        new go.Binding("source", "level", function (b) {
+                            if (b == -1) {
+                                return "imp/topo/img/topoimg/huidian.png"
+                        	}else if(b==0){
+                                return	"imp/topo/img/topoimg/lvdian.png"
+                        	}
+                            return "imp/topo/img/topoimg/hongdian.png";
+                             
+                        }
+                        )),
+
+
+                        _(go.TextBlock,
+                            {
+                                row: 1, column: 0, alignment: go.Spot.Center,
+                                margin: new go.Margin(0, 0, 0, 0),  // leave room for Button
+                                font: "11px Microsoft YaHei UI",
+                                textAlign: "center",
+                                editable: true
+                            },
+                            // new go.Binding("stroke", "isHighlighted", function(h) { return h ? "#e1f3fc" : "black"; }).ofObject(),
+                            new go.Binding("text", "text").makeTwoWay(),
+                            new go.Binding("row", 'text', function (h) { return h ? 1 : 0 }),
+                            new go.Binding("stroke", "isHighlighted", function (h) { return h ? "red" : "#000000"; }).ofObject(),
+                        )
+
+                    )
+
+                );  // end Node
+            
+
+                
+
+
+            if (window.Inspector) {
+
+                console.log(window.Inspector)
+            }
+
+            // The link data object does not have direct access to both nodes
+            // (although it does have references to their keys: .from and .to).
+            // This conversion function gets the GraphObject that was data-bound as the second argument.
+            // From that we can get the containing Link, and then the Link.fromNode or .toNode,
+            // and then its node data, which has the ".critical" property we need.
+            //
+            // But note that if we were to dynamically change the ".critical" property on a node data,
+            // calling myDiagram.model.updateTargetBindings(nodedata) would only update the color
+            // of the nodes.  It would be insufficient to change the appearance of any Links.
+            function linkColorConverter(linkdata, elt) {
+                var link = elt.part;
+                if (!link) return blue;
+                var f = link.fromNode;
+                if (!f || !f.data || !f.data.critical) return blue;
+                var t = link.toNode;
+                if (!t || !t.data || !t.data.critical) return blue;
+                return pink;  // when both Link.fromNode.data.critical and Link.toNode.data.critical
+            }
+
+            // The color of a link (including its arrowhead) is red only when both
+            // connected nodes have data that is ".critical"; otherwise it is blue.
+            // This is computed by the binding converter function.
+
+
+
+
+            myDiagram.linkTemplate =
+                _(go.Link,
+                    _(go.Shape,
+                        { stroke: '#03d560', fill: "#03d560", strokeWidth: 2 },
+                        new go.Binding("stroke", 'flux', function (h) { return h == '-1' ? 'red' : '#03d560' }),
+                        new go.Binding("strokeDashArray", "flux", function (h) { return h == '-1' ? [5, 3] : '' })
+                    ),
+                    /* _(go.Shape,
+                        { toArrow: "Standard", stroke: '#909090', fill: "#909090" },
+                        new go.Binding("stroke", 'flux',function(h){ return h=='-1'?'red':'#909090'}),
+                        new go.Binding("fill", 'flux',function(h){ return h=='-1'?'red':'#909090'}), */
+                    /* new go.Binding("stroke", 'flux',function(h){return h?'#48916e':'#909090'}).ofObject(),
+                    new go.Binding("fill", 'flux',function(h){return h?'#48916e':'#909090'}).ofObject() */
+                    /* 	), */
+                    _(go.Panel, "Auto",
+                        /*  _(go.Shape,  
+                         {
+                           fill: _(go.Brush, "Radial",
+                             { 0: "rgb(255, 255, 255)", 0.3: "rgb(255, 255, 255)", 1: "rgba(255, 255, 255, 0)" }),
+                           stroke: null
+                         }),   */
+                        _(go.TextBlock, // the label text
+                            {
+                                textAlign: "center",
+                                font: "9pt helvetica, arial, sans-serif",
+                                margin: 40,
+                                //editable: true  
+                                // enable in-place editing
+                            },
+                            new go.Binding("text", 'flux').makeTwoWay()
+                        )
+                    )  // the gray link shape
+                );  // the gray link shape
+
+            function groupInfo(adornment) {  // takes the tooltip or context menu, not a group node data object
+                var g = adornment.adornedPart;  // get the Group that the tooltip adorns
+                var mems = g.memberParts.count;
+                var links = 0;
+                g.memberParts.each(function (part) {
+                    if (part instanceof go.Link) links++;
+                });
+                return "Group " + g.data.key + ": " + g.data.text + "\n" + mems + " members including " + links + " links";
+            }
+
+
+            myDiagram.groupTemplate =
+            _(go.Group, "Vertical",
+            {
+            selectionObjectName: "PANEL", // selection handle goes around shape, not label
+            ungroupable: true, // enable Ctrl-Shift-G to ungroup a selected Group
+            },
+            _(go.TextBlock,
+            {
+            font: "19px Microsoft YaHei UI",
+            isMultiline: false, // don't allow newlines in text
+            editable: true, // allow in-place editing by user
+            stroke:"#36699d"
+            },
+            new go.Binding("text", "text").makeTwoWay()
+            ),
+            _(go.Panel, "Auto",
+            { name: "PANEL" },
+            _(go.Shape, "RoundedRectangle", // the rectangular shape around the members
+            {
+            fill: "#f5f4f4", stroke: "#13b5b1", strokeWidth: 1,strokeDashArray:[5,3],
+            portId: "", cursor: "pointer", // the Shape is the port, not the whole Node
+            // allow all kinds of links from and to this port
+            fromLinkable: true, fromLinkableSelfNode: true, fromLinkableDuplicates: true,
+            toLinkable: true, toLinkableSelfNode: true, toLinkableDuplicates: true
+            }),
+            _(go.Placeholder, { margin: 10, background: "transparent" }) // represents where the members are
+            ),
+            { // this tooltip Adornment is shared by all groups
+            toolTip:
+            _("ToolTip",
+            _(go.TextBlock, { margin: 4 },
+            // bind to tooltip, not to Group.data, to allow access to Group properties
+            new go.Binding("text", "", groupInfo).ofObject())
+            ),
+            contextMenu: partContextMenu
+            }
+            );
+
+
+
+
+            // here's the data defining the graph
+            var nodeDataArray = [
+                { level: "1", "key": 2, "systemid": "SRB", "serverid": "752507", "ip": "路书系统", "devicename": "路书系统", "imagesource": "./imp/topo/img/topoimg/yyxt.png", "text": "马良测试", "category": "yyxt", "category_id": "101", "categoryzh": "应用系统", "loc": "-288.8281249999998 -128.0000000000001" },
+                {level: "5", "key": 3, "systemid": "", "serverid": "", "ip": "10.10.49.152", "devicename": "10.10.49.152", "imagesource": "./imp/topo/img/topoimg/fwq.png", "text": "10.10.49.152", "category": "fwq", "category_id": "1", "categoryzh": "服务器", "loc": "-352.82812500000057 -29.764839685807914", "group": -11 },
+                {level: "6", "key": -3, "systemid": "SSTF", "serverid": "165375", "ip": "国际结算系统", "devicename": "国际结算系统", "imagesource": "./imp/topo/img/topoimg/yyxt.png", "text": "国际结算系统", "category": "yyxt", "category_id": "101", "categoryzh": "应用系统", "loc": "-25.078124999999993 -128" },
+                {level: "5", "key": -4, "systemid": "", "serverid": "", "ip": "10.10.49.36", "devicename": "10.10.49.36", "imagesource": "./imp/topo/img/topoimg/fwq.png", "text": "10.10.49.36", "category": "fwq", "category_id": "1", "categoryzh": "服务器", "loc": "-620.8281250000002 -29.764839685807914", "group": -11 },
+                { level: "5", "key": 4, "systemid": "", "serverid": "", "ip": "10.10.49.192", "devicename": "10.10.49.192", "imagesource": "./imp/topo/img/topoimg/cc.png", "text": "10.10.49.192", "category": "cc", "category_id": "2", "categoryzh": "存储", "loc": "54.671875 -9.764839685807942", "group": -12 },
+                { level: "5", "key": -6, "systemid": "", "serverid": "", "ip": "10.10.49.154", "devicename": "10.10.49.154", "imagesource": "./imp/topo/img/topoimg/fwq.png", "text": "10.10.49.154", "category": "fwq", "category_id": "1", "categoryzh": "服务器", "loc": "-104.828125 -9.764839685807942", "group": -12 },
+                { level: "0", "key": 5, "systemid": "", "serverid": "", "ip": "10.50.20.11", "devicename": "10.50.20.11", "imagesource": "./imp/topo/img/topoimg/lyq.png", "text": "10.50.20.11", "category": "lyq", "category_id": "3", "categoryzh": "路由器", "loc": "-620.8281250000002 97.61504109459605", "group": -11 },
+                { level: "-1", "key": 6, "systemid": "", "serverid": "", "ip": "", "devicename": "", "imagesource": "./imp/topo/img/topoimg/jhj.png", "text": "交换机", "category": "jhj", "category_id": "4", "categoryzh": "交换机", "loc": "-104.828125 85", "group": -12, "level": -1 },
+                { level: "-1", "key": -9, "systemid": "", "serverid": "", "ip": "10.10.49.142", "devicename": "10.10.49.142", "imagesource": "./imp/topo/img/topoimg/lyq.png", "text": "10.10.49.142", "category": "lyq", "category_id": "3", "categoryzh": "路由器", "loc": "54.67187500000001 85", "group": -12 },
+                { level: "-1", "key": -10, "systemid": "", "serverid": "", "ip": "", "devicename": "", "imagesource": "./imp/topo/img/topoimg/jhj.png", "text": "交换机", "category": "jhj", "category_id": "4", "categoryzh": "交换机", "loc": "-352.82812500000057 98.00000000000006", "group": -11 },
+                { level: "-1", "text": "分组名称", "isGroup": true, "color": "blue", "key": -11 },
+                { level: "-1", "text": "分组名称", "isGroup": true, "color": "blue", "key": -12 }
+            ];
+            var linkDataArray = [
+                { "from": -9, "to": 4},
+                { "from": 6, "to": -6},
+                { "from": -6, "to": 4 },
+                { "from": -3, "to": -6 },
+                { "from": 2, "to": 3 },
+                { "from": -4, "to": 3, "text": "aaa" },
+                { "from": -4, "to": 5 },
+                { "from": 5, "to": -10 },
+                { "from": -10, "to": 3 ,flux:9},
+                { "from": 6, "to": -9 ,flux:6}
+            ];
+            myDiagram.model = new go.GraphLinksModel(nodeDataArray, linkDataArray);
+
+
+            var myPalette =
+                _(go.Palette, "leftbox");
+
+            // the Palette's node template is different from the main Diagram's
+            myPalette.nodeTemplate =
+            _(go.Node, "Auto",
+            _(go.Panel, "Spot", // the border
+            {
+            width: 70
+            },
+            ),
+
+            _(go.Panel, "Table",
+            { margin: 0, stretch: go.GraphObject.Fill },
+
+            _(go.Picture, {
+            row: 0, column: 0, alignment: go.Spot.Center,
+            desiredSize: new go.Size(40, 40),
+            margin: new go.Margin(0, 0, 0, 0),
+            width: 40,
+            },
+            new go.Binding("source", "imagesource"
+            )
+
+            ),
+            _(go.TextBlock,
+            {
+            row: 1, column: 0, alignment: go.Spot.Center,
+            margin: new go.Margin(5, 0, 0, 0), // leave room for Button
+            font: "11px Microsoft YaHei UI",
+            textAlign: "center"
+            },
+            new go.Binding("text", "text"))
+            )
+
+            )
+
+            // the list of data to show in the Palette
+            myPalette.model.nodeDataArray = [
+                { level: "-1", key: 1, ip: "", devicename: "", imagesource: "./imp/topo/img/topoimg/zituopu.png", text: "子拓扑", category: 'zituopu', category_id: '100', categoryzh: "子拓扑" },
+                { level: "-1", key: 2, ip: "", devicename: "", imagesource: "./imp/topo/img/topoimg/yyxt.png", text: "应用系统", category: 'yyxt', category_id: '101', categoryzh: "应用系统" },
+                { level: "-1", key: 3, ip: "", devicename: "", imagesource: "./imp/topo/img/topoimg/fwq.png", text: "服务器", category: 'fwq', category_id: '1', categoryzh: "服务器" },
+                { level: "-1", key: 4, ip: "", devicename: "", imagesource: "./imp/topo/img/topoimg/cc.png", text: "存储", category: 'cc', category_id: '2', categoryzh: "存储" },
+                { level: "-1", key: 5, ip: "", devicename: "", imagesource: "./imp/topo/img/topoimg/lyq.png", text: "路由器", category: 'lyq', category_id: '3', categoryzh: "路由器" },
+                { level: "-1", key: 6, ip: "", devicename: "", imagesource: "./imp/topo/img/topoimg/jhj.png", text: "交换机", category: 'jhj', category_id: '4', categoryzh: "交换机" },
+                { level: "-1", key: 7, ip: "", devicename: "", imagesource: "./imp/topo/img/topoimg/fhq.png", text: "防火墙", category: 'fhq', category_id: '5', categoryzh: "防火墙" },
+                { level: "-1", key: 8, ip: "", devicename: "", imagesource: "./imp/topo/img/topoimg/fzjhsb.png", text: "负载均衡器", category: 'fzjhsb', category_id: '6', categoryzh: "负载均衡器" },
+                { level: "-1", key: 9, ip: "", devicename: "", imagesource: "./imp/topo/img/topoimg/ssl.png", text: "SSL加速器", category: 'ssl', category_id: '7', categoryzh: "SSL加速器" },
+                { level: "-1", key: 10, ip: "", devicename: "", imagesource: "./imp/topo/img/topoimg/sjk.png", text: "数据库", category: 'sjk', category_id: '8', categoryzh: "数据库" },
+                { level: "-1", key: 11, ip: "", devicename: "", imagesource: "./imp/topo/img/topoimg/zjj.png", text: "中间件", category: 'zjj', category_id: '9', categoryzh: "中间件" },
+                { level: "-1", key: 12, ip: "", devicename: "", imagesource: "./imp/topo/img/topoimg/yzj.png", text: "云主机", category: 'yzj', category_id: '10', categoryzh: "云主机" },
+            ]
+
+            cxElement.addEventListener("contextmenu", function (e) {
+                console.log(e)
+                e.preventDefault();
+                return false;
+            }, false);
+
+            function showContextMenu(obj, diagram, tool) {
+                currentData = obj.data;
+                var cmd = diagram.commandHandler;
+                // Now show the whole context menu element
+                cxElement.style.display = "block";
+                // we don't bother overriding positionContextMenu, we just do it here:
+                var mousePt = diagram.lastInput.viewPoint;
+                cxElement.style.left = (mousePt.x + 120) + "px";
+                cxElement.style.top = (mousePt.y + 50) + "px";
+            }
+
+        }
+        function setProperty(obj) {
+            console.log(obj)
+        }
+        function handleNodeclick(e, obj) {
+            var clicked = obj.part;
+            vue.clickType = 'node'
+            console.log(clicked.data)
+            vue.node = clicked.data
+            vue.type = clicked.data.categoryzh
+            vue.name = clicked.data.devicename
+            vue.ip = clicked.data.ip
+            var s1 = clicked.data.category_id
+            vue.options = [];
+            vue.options = jQuery.grep([], function (item, index) {
+                return item.CATEGORY_ID == s1
+            });
+        }
+        function handleLinkclick(e, obj) {
+            var clicked = obj.part;
+            vue.clickType = 'link'
+            console.log(clicked.data)
+            console.log('link')
+        }
+
+        var alarmData = [{ "key": 2, level: "2" }, { "key": 4, level: "2" }];
+
+        var count = 1;
+        function shanshuo() {
+            count += 1;
+            if (count >= 100000) {
+                count = 1;
+            }
+            jQuery(alarmData).each(function (index, item) {
+                var nodeData = myDiagram.model.findNodeDataForKey(item.key);
+                if (nodeData) {
+                    if (count % 2) {
+                        nodeData.level = -1;
+                        myDiagram.model.updateTargetBindings(nodeData);
+                    }
+                    else {
+                        nodeData.level = item.level;
+                        myDiagram.model.updateTargetBindings(nodeData);
+                    }
+
+                }
+            })
+
+        }
+
+        jQuery(document).ready(function () {
+            setInterval('shanshuo()', 500);
+
+
+            setTimeout(function () {
+                myDiagram.model.linkDataArray.forEach(innerItem => {
+                    if (innerItem.from.toString() == "-3" && innerItem.to.toString() == '-6') {
+                        innerItem.flux = '-1'
+                        myDiagram.model.updateTargetBindings(innerItem)
+                    }
+                })
+            }, 2000)
+        })
+    </script>
+</head>	
+<body class="container-fluid" style="margin-top:10px;position:relative;">
+    <div id="sample" style="position: relative;">
+        <div id="nodePro" v-show="visible">
+            <el-form ref="form" label-width="80px">
+                <el-form-item label="类别">
+                    <el-input v-model="type" :disabled="true"></el-input>
+                </el-form-item>
+                <el-form-item label="ip">
+                    <el-select v-model="ip" @change="changeName" placeholder="请选择IP">
+                        <el-option :label="item.DEVICE_IP" v-for="item of options" :value="item.DEVICE_IP"></el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="设备名称">
+                    <el-input v-model="name" :disabled="true"></el-input>
+                </el-form-item>
+            </el-form>
+        </div>
+        <div style="height:40px;line-height:40px;background-color:#ceedfc">
+            <div class="col-md-1 text-nowrap" style="color:#37689b">拓扑设计器</div>
+            <div class="col-md-2 text-nowrap">
+                <span style="color:#76828b">
+                    拓扑名称:
+                </span>
+                <span style="color:#37689b" id="topo_type_span">网络拓扑</span>
+            </div>
+
+
+            <div class="col-md-2" style="height:40px;line-height:40px;">
+                <el-switch v-model="value1"
+                           active-text=""
+                           active-color="#13ce66"
+                           inactive-color="#eeeeee">
+                </el-switch>
+            </div>
+
+            <div class="col-md-1 dropdown-wrapper">
+                <el-dropdown>
+                    <span style="color: rgb(55, 104, 155);" class="el-dropdown-link">
+                        对齐方式<i class="el-icon-arrow-down el-icon--right"></i>
+                    </span>
+                    <el-dropdown-menu slot="dropdown">
+                        <el-dropdown-item onclick="myDiagram.commandHandler.alignLeft()">左对齐</el-dropdown-item>
+                        <el-dropdown-item onclick="myDiagram.commandHandler.alignRight()">右对齐</el-dropdown-item>
+                        <el-dropdown-item onclick="myDiagram.commandHandler.alignTop()">上对齐</el-dropdown-item>
+                        <el-dropdown-item onclick="myDiagram.commandHandler.alignBottom()">下对齐</el-dropdown-item>
+                    </el-dropdown-menu>
+                </el-dropdown>
+            </div>
+
+            <div class="col-md-1 dropdown-wrapper">
+                <el-dropdown @command="buju">
+                    <span style="color: rgb(55, 104, 155);" class="el-dropdown-link">
+                        快速布局<i class="el-icon-arrow-down el-icon--right"></i>
+                    </span>
+                    <el-dropdown-menu slot="dropdown">
+                        <el-dropdown-item command="none">原始布局</el-dropdown-item>
+                        <!--  <el-dropdown-item  command="auto">自动布局</el-dropdown-item> -->
+                        <el-dropdown-item command="star">星形布局</el-dropdown-item>
+                        <!--  <el-dropdown-item command="array">链式布局</el-dropdown-item> -->
+
+                    </el-dropdown-menu>
+                </el-dropdown>
+            </div>
+
+            <div class="col-md-1 dropdown-wrapper">
+                <el-dropdown @command="setShowText">
+                    <span style="color: rgb(55, 104, 155);" class="el-dropdown-link">
+                        节点标题<i class="el-icon-arrow-down el-icon--right"></i>
+                    </span>
+                    <el-dropdown-menu slot="dropdown">
+                        <el-dropdown-item command="none">不显示</el-dropdown-item>
+                        <el-dropdown-item command="categoryzh">设备类别</el-dropdown-item>
+                        <el-dropdown-item command="ip">设备IP</el-dropdown-item>
+                        <el-dropdown-item command="devicename">设备名称</el-dropdown-item>
+                    </el-dropdown-menu>
+                </el-dropdown>
+            </div>
+
+            <div style="height:40px;line-height:40px;padding-left:40px;" class="col-md-2">
+                <el-input v-model="searchValue" id="mySearch" placeholder="请输入内容"></el-input>
+            </div>
+            <div class="col-md-2 text-right">
+                <img src="./topoImage/m1.png" id="saveTopoBtn" style="height:30px;" />
+                <img src="./topoImage/m2.png" onclick="vue.visible=!vue.visible" style="height:30px;" />
+                <img src="./topoImage/m3.png" style="height:30px;" />
+            </div>
+        </div>
+
+        <div>
+            <div id="leftbox" class="col-md-1 text-center" style="background:#eee;padding: 0;margin: 0 auto;"></div>
+            <div class="col-md-11" style="padding: 0;">
+                <div id="myDiagramDiv"></div>
+            </div>
+        </div>
+
+        <div id="contextMenu">
+            <ul id="contextUl"></ul>
+        </div>
+
+
+    </div>
+</body>
+<script>
+  var vue=new Vue({
+      el: "#sample",
+      data: {
+          value1: false,
+          layOut:'选项1',
+          searchValue:'',
+          clickedTypeId:'',
+          visible:false,
+          options:[],
+          type:'',
+          name:'',
+          ip:'',
+          node:'',
+          clickType:''
+      },
+      watch: {
+          value1: function (v1) {
+              if (v1) {
+                jQuery('#myDiagramDiv').css("background-image", "url('./topoImage/gezi.jpg')");
+              }
+              else {
+                jQuery('#myDiagramDiv').css("background-image", "unset");
+              }
+          },
+          searchValue:function(){
+              this.fsearchDiagram()
+          }
+
+      },
+      methods: {
+          buju(command) {
+              if (command == 'none') {
+                  queryTopoMessage(topo_id);
+                  myDiagram.layout = bicaode;
+              }
+              else if (command == 'auto') {
+                  myDiagram.layout = _(go.LayeredDigraphLayout, { isInitial: false });
+                  myDiagram.layoutDiagram(true);
+                  myDiagram.layout = bicaode;
+              }
+              else if (command == 'star') {
+
+
+                  /////////////////////////////
+                  // This variation on ForceDirectedLayout does not move any selected Nodes
+                  // but does move all other nodes (vertexes).
+                  window.ContinuousForceDirectedLayout = function ContinuousForceDirectedLayout() {
+                      go.ForceDirectedLayout.call(this);
+                      this._isObserving = false;
+                  }
+                  go.Diagram.inherit(ContinuousForceDirectedLayout, go.ForceDirectedLayout);
+
+                  ContinuousForceDirectedLayout.prototype.isFixed = function (v) {
+                      return v.node.isSelected;
+                  }
+
+                  // optimization: reuse the ForceDirectedNetwork rather than re-create it each time
+                  ContinuousForceDirectedLayout.prototype.doLayout = function (coll) {
+                      if (!this._isObserving) {
+                          this._isObserving = true;
+                          // cacheing the network means we need to recreate it if nodes or links have been added or removed or relinked,
+                          // so we need to track structural model changes to discard the saved network.
+                          var lay = this;
+                          this.diagram.addModelChangedListener(function (e) {
+                              // modelChanges include a few cases that we don't actually care about, such as
+                              // "nodeCategory" or "linkToPortId", but we'll go ahead and recreate the network anyway.
+                              // Also clear the network when replacing the model.
+                              if (e.modelChange !== "" ||
+                                  (e.change === go.ChangedEvent.Transaction && e.propertyName === "StartingFirstTransaction")) {
+                                  lay.network = null;
+                              }
+                          });
+                      }
+                      var net = this.network;
+                      if (net === null) {  // the first time, just create the network as normal
+                          this.network = net = this.makeNetwork(coll);
+                      } else {  // but on reuse we need to update the LayoutVertex.bounds for selected nodes
+                          this.diagram.nodes.each(function (n) {
+                              var v = net.findVertex(n);
+                              if (v !== null) v.bounds = n.actualBounds;
+                          });
+                      }
+                      // now perform the normal layout
+                      go.ForceDirectedLayout.prototype.doLayout.call(this, coll);
+                      // doLayout normally discards the LayoutNetwork by setting Layout.network to null;
+                      // here we remember it for next time
+                      this.network = net;
+                  }
+                  // end ContinuousForceDirectedLayout
+                  //////////////////////////////
+
+                  myDiagram.layout =
+                      _(ContinuousForceDirectedLayout,  // automatically spread nodes apart while dragging
+                          { defaultSpringLength: 30, defaultElectricalCharge: 20 });
+
+
+                  myDiagram.layoutDiagram(true);
+                  myDiagram.layout = bicaode;
+
+              }
+              else if (command == 'array') {
+                  myDiagram.layout = _(SerpentineLayout, { isInitial: false });
+                  myDiagram.layoutDiagram(true);
+                  myDiagram.layout = bicaode;
+              }
+          },
+         save(){
+             console.log(this.type)
+             console.log(this.name)
+             console.log(this.ip)
+             vue.visible=false
+         },
+          fsearchDiagram() {  // called by button
+                var input = document.getElementById("mySearch");
+                if (!input) return;
+                input.focus();
+                myDiagram.startTransaction("highlight search");
+                if (input.value) {
+                    // search four different data properties for the string, any of which may match for success
+                    // create a case insensitive RegExp from what the user typed
+                    var regex = new RegExp(input.value, "i");
+                    //{ key: 3, text: "b", length: 5.33, earlyStart: 12220, lateFinish: 9.17, critical: false, sysName: "异地机房" },
+                    var results = myDiagram.findNodesByExample({ sysName: regex },
+                    { text: regex });
+                    console.log(results)
+                    myDiagram.highlightCollection(results);
+                    // try to center the diagram at the first node that was found
+                    if (results.count > 0) myDiagram.centerRect(results.first().actualBounds);
+                } else {  // empty string only clears highlighteds collection
+                    myDiagram.clearHighlighteds();
+                }
+                myDiagram.commitTransaction("highlight search");
+            },
+            changeName(val){
+              this.name=val;
+              var nodeData = myDiagram.model.findNodeDataForKey(this.node.key);  
+              nodeData.devicename=this.name
+              nodeData.ip=this.ip
+              nodeData.text=this.ip
+            myDiagram.model.updateTargetBindings(nodeData);
+          },
+          setShowText(command) {
+              console.log(command)
+              // this.name=val;
+              /* <el-dropdown-item command="none">不显示</el-dropdown-item>
+                <el-dropdown-item command="categoryzh">设备类别</el-dropdown-item>
+                <el-dropdown-item command="ip">设备IP</el-dropdown-item>
+                <el-dropdown-item command="devicename">设备名称</el-dropdown-item> */
+              console.log(myDiagram.model.nodeDataArray)
+              myDiagram.model.nodeDataArray.forEach(item => {
+                  if (command == 'none') {
+                      item.text = ''
+                  } else if (command == 'categoryzh') {
+                      item.text = item['categoryzh']
+                  } else if (command == 'ip') {
+                      if (item['ip']) {
+                          item.text = item['ip']
+                      } else if (item['devicename']) {
+                          item.text = item['devicename']
+                      } else {
+                          item.text = item['categoryzh']
+                      }
+                  } else if (command == 'devicename') {
+                      if (item['devicename']) {
+                          item.text = item['devicename']
+                      } else if (item['ip']) {
+                          item.text = item['ip']
+                      } else {
+                          item.text = item['categoryzh']
+                      }
+                  }
+                  myDiagram.model.updateTargetBindings(item);
+              })
+              //nodeDataArray
+              /* var nodeData = myDiagram.model.findNodeDataForKey(this.node.key);  
+              nodeData.devicename=this.name
+              nodeData.ip=this.ip
+              nodeData.text=this.ip
+              myDiagram.model.updateTargetBindings(nodeData); */
+          },
+      }
+
+  })
+</script>
+</html>
